@@ -1,0 +1,11 @@
+,con Age,senza Age,variazione
+DP gap (Poor),0.2232,0.2249,0.0018
+EO gap TPR (Poor),0.1816,0.1753,-0.0063
+EO gap FPR (Poor),0.1103,0.1159,0.0056
+DP gap (Standard),0.0235,0.0239,0.0004
+EO gap TPR (Standard),0.0304,0.0322,0.0019
+EO gap FPR (Standard),0.0206,0.0246,0.004
+DP gap (Good),0.2077,0.2095,0.0018
+EO gap TPR (Good),0.0639,0.0616,-0.0023
+EO gap FPR (Good),0.1279,0.1303,0.0024
+gap macro-F1,0.017,0.0134,-0.0037

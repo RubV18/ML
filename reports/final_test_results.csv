@@ -1,0 +1,3 @@
+modello,macro_F1_test,accuracy_test,F1_Poor,F1_Standard,F1_Good,recall_Poor,recall_Standard,recall_Good,macro_F1_cv,scarto_cv_test
+Filone A — Random Forest,0.7617,0.7688,0.7981,0.7773,0.7097,0.8091,0.6882,0.9146,0.744,0.0177
+Filone B — Decision Tree,0.7459,0.7508,0.7798,0.7488,0.7092,0.8355,0.6342,0.9124,0.7272,0.0188
