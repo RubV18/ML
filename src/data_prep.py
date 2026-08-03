@@ -101,8 +101,13 @@ def _parse_credit_history_age(s: pd.Series) -> pd.Series:
     return parts[0].astype("Float64") * 12 + parts[1].astype("Float64")
 
 
-def clean_rows(df: pd.DataFrame) -> pd.DataFrame:
-    """Cleaning riga per riga, prima dell'aggregazione."""
+def clean_rows(df: pd.DataFrame, apply_domain_rules: bool = True) -> pd.DataFrame:
+    """Cleaning riga per riga, prima dell'aggregazione.
+
+    `apply_domain_rules=False` disattiva i vincoli di plausibilita' (d, e):
+    serve solo all'ablation di step09, per misurare quanto la pulizia costa o
+    guadagna in performance. Non usare per il modello finale.
+    """
     df = df.copy()
 
     # a) sentinelle -> NaN (fatto PRIMA della coercizione numerica, perche'
@@ -123,7 +128,7 @@ def clean_rows(df: pd.DataFrame) -> pd.DataFrame:
     #    Traccio quanto nullifica ogni regola: una regola che azzera troppo e'
     #    un vincolo sbagliato, non un dato sporco (cfr. il caso Age 14-17).
     nulled = {}
-    for col, (lo, hi) in PLAUSIBLE_RANGE.items():
+    for col, (lo, hi) in (PLAUSIBLE_RANGE if apply_domain_rules else {}).items():
         if col not in df.columns:
             continue
         mask = pd.Series(False, index=df.index)
@@ -136,10 +141,12 @@ def clean_rows(df: pd.DataFrame) -> pd.DataFrame:
 
     # e) regola di dominio inter-colonna: la rata mensile totale non puo'
     #    superare il reddito mensile disponibile (debt-service ratio > 1).
-    monthly_income = df["Monthly_Inhand_Salary"].fillna(df["Annual_Income"] / 12)
-    emi_mask = df["Total_EMI_per_month"] > monthly_income
-    nulled["Total_EMI_per_month (DSR>1)"] = float((emi_mask & df["Total_EMI_per_month"].notna()).mean())
-    df.loc[emi_mask, "Total_EMI_per_month"] = np.nan
+    if apply_domain_rules:
+        monthly_income = df["Monthly_Inhand_Salary"].fillna(df["Annual_Income"] / 12)
+        emi_mask = df["Total_EMI_per_month"] > monthly_income
+        nulled["Total_EMI_per_month (DSR>1)"] = float(
+            (emi_mask & df["Total_EMI_per_month"].notna()).mean())
+        df.loc[emi_mask, "Total_EMI_per_month"] = np.nan
     df.attrs["nulled_by_rule"] = nulled
 
     # f) ordinamento temporale esplicito
@@ -196,6 +203,25 @@ def aggregate_by_customer(df: pd.DataFrame) -> pd.DataFrame:
 # --------------------------------------------------------------------------- #
 # 4. Feature engineering
 # --------------------------------------------------------------------------- #
+def loan_type_multihot(df: pd.DataFrame) -> pd.DataFrame:
+    """Aggiunge le colonne has_* e n_loan_types, senza rimuovere Type_of_Loan.
+
+    Funziona sia a livello riga sia a livello cliente (Type_of_Loan e' costante
+    entro cliente, verificato nell'audit), cosi' che la diagnostica sul leakage
+    di step09 usi esattamente la stessa codifica della pipeline principale
+    invece di una copia divergente.
+    """
+    df = df.copy()
+    txt = df["Type_of_Loan"].fillna("")
+    cols = []
+    for lt in LOAN_TYPES:
+        col = f"has_{_slug(lt)}"
+        df[col] = txt.str.contains(lt, regex=False).astype(int)
+        cols.append(col)
+    df["n_loan_types"] = df[cols].sum(axis=1)
+    return df
+
+
 def add_loan_type_features(agg: pd.DataFrame) -> pd.DataFrame:
     """Multi-hot sui tipi di prestito + conteggio dei tipi distinti.
 
@@ -205,12 +231,7 @@ def add_loan_type_features(agg: pd.DataFrame) -> pd.DataFrame:
     NaN in Type_of_Loan e' missing *strutturale* (= nessun prestito, verificato
     contro Num_of_Loan == 0): diventa multi-hot tutto a zero, non imputazione.
     """
-    agg = agg.copy()
-    txt = agg["Type_of_Loan"].fillna("")
-    for lt in LOAN_TYPES:
-        agg[f"has_{_slug(lt)}"] = txt.str.contains(lt, regex=False).astype(int)
-    agg["n_loan_types"] = agg[[f"has_{_slug(lt)}" for lt in LOAN_TYPES]].sum(axis=1)
-    return agg.drop(columns=["Type_of_Loan"])
+    return loan_type_multihot(agg).drop(columns=["Type_of_Loan"])
 
 
 def add_dispersion_features(clean: pd.DataFrame, agg: pd.DataFrame) -> pd.DataFrame:
@@ -244,12 +265,13 @@ def build_customer_dataset(
     df_raw: pd.DataFrame,
     use_dispersion: bool = True,
     use_ratios: bool = True,
+    apply_domain_rules: bool = True,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Raw (100k righe) -> dataset a livello cliente (~12.5k righe).
 
     Ritorna (dataset_cliente, dataframe_pulito_a_livello_riga)."""
     df = df_raw.drop(columns=[c for c in DROP_COLS if c in df_raw.columns])
-    clean = clean_rows(df)
+    clean = clean_rows(df, apply_domain_rules=apply_domain_rules)
     agg = aggregate_by_customer(clean)
     agg = add_loan_type_features(agg)
     if use_dispersion:

@@ -1,0 +1,5 @@
+,accuracy,macro_F1
+riga (casuale) — CON leakage,0.707,0.7001
+riga (per cliente) — SENZA leakage,0.6825,0.6786
+riga + Customer_ID fra le feature,0.7083,0.7011
+cliente (aggregato) — questo progetto,0.7688,0.7617

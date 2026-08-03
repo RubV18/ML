@@ -22,18 +22,17 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from sklearn.base import clone
 from sklearn.metrics import f1_score
-from sklearn.model_selection import StratifiedKFold, cross_val_predict
+from sklearn.model_selection import cross_val_predict
 
 import config as C
+from evaluation import build_pipeline, load_split, make_cv
 
 pd.set_option("display.width", 220)
 
-pool = pd.read_csv(C.ARTIFACTS / "train_pool.csv")
-test = pd.read_csv(C.ARTIFACTS / "test.csv")
-drop = [c for c in ["Customer_ID", C.TARGET, "_target_agreement"] if c in pool.columns]
-X_pool, y_pool = pool.drop(columns=drop), pool[C.TARGET]
-X_test, y_test = test.drop(columns=drop), test[C.TARGET]
+X_pool, y_pool = load_split("pool")
+X_test, y_test = load_split("test")
 
 model = joblib.load(C.ARTIFACTS / "model_filone_a.joblib")
 meta = joblib.load(C.ARTIFACTS / "model_filone_a_meta.joblib")
@@ -79,7 +78,7 @@ def disparities(tbl):
 
 # %%
 # --- Vista 1: out-of-fold sul train pool (n = 10.000) ---------------------
-cv = StratifiedKFold(n_splits=C.N_FOLDS, shuffle=True, random_state=C.RANDOM_STATE)
+cv = make_cv()
 oof = cross_val_predict(model, X_pool, y_pool, cv=cv, n_jobs=-1)
 g_pool = age_band(X_pool)
 tbl_oof = fairness_table(y_pool, oof, g_pool)
@@ -130,8 +129,6 @@ fig.tight_layout(); fig.savefig(C.FIGURES / "14_fairness_parity.png"); plt.close
 # perche' passa da variabili proxy (es. Credit_History_Age_Months, che con
 # l'eta' e' strutturalmente correlata)? E' la domanda che distingue un fix
 # cosmetico da uno reale.
-from sklearn.base import clone
-
 age_proxy_corr = X_pool.corr(numeric_only=True)["Age"].drop("Age").abs()
 print("\n\n=== Unawareness test ===")
 print("feature piu' correlate con l'eta' (proxy candidate):")
@@ -139,15 +136,10 @@ print(age_proxy_corr.sort_values(ascending=False).head(5).round(3).to_string())
 
 # Il preprocessor referenzia le colonne per nome: va ricostruito sullo spazio
 # ridotto, mantenendo identici classificatore e iperparametri.
-from sklearn.pipeline import Pipeline
-
-from features import make_preprocessor
-
 X_pool_na = X_pool.drop(columns=["Age"])
 scale = any("sc" in dict(step[1].steps) for step in model.named_steps["prep"].transformers
             if hasattr(step[1], "steps"))
-model_na = Pipeline([("prep", make_preprocessor(X_pool_na, scale=scale)),
-                     ("clf", clone(model.named_steps["clf"]))])
+model_na = build_pipeline(clone(model.named_steps["clf"]), X_pool_na, scale)
 oof_na = cross_val_predict(model_na, X_pool_na, y_pool, cv=cv, n_jobs=-1)
 tbl_na = fairness_table(y_pool, oof_na, g_pool)
 

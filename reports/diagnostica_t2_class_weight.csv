@@ -1,0 +1,4 @@
+config,accuracy,macro_F1,recall_Poor,recall_Standard,recall_Good
+class_weight='balanced' (scelta del progetto),0.7499,0.744,0.7888,0.6699,0.8967
+class_weight=None,0.7499,0.7393,0.7119,0.7582,0.798
+baseline: predice sempre 'Standard',0.4889,0.2189,0.0,1.0,0.0

@@ -17,14 +17,14 @@ import pandas as pd
 from sklearn.feature_selection import mutual_info_classif
 
 import config as C
+from evaluation import load_split
 from features import split_columns
 
 plt.rcParams.update({"figure.dpi": 130, "font.size": 9})
 pd.set_option("display.width", 200)
 
-pool = pd.read_csv(C.ARTIFACTS / "train_pool.csv")
+_, y, pool = load_split("pool", with_diagnostics=True)
 num_cols, cat_cols = split_columns(pool)
-y = pool[C.TARGET]
 PALETTE = {"Poor": "#c0392b", "Standard": "#e08b1f", "Good": "#2d7d46"}
 
 # %%

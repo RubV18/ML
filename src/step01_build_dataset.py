@@ -9,7 +9,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 

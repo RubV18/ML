@@ -18,17 +18,15 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import (ConfusionMatrixDisplay, classification_report,
                              confusion_matrix, f1_score)
-from sklearn.model_selection import StratifiedKFold, cross_val_predict
+from sklearn.model_selection import cross_val_predict
 
 import config as C
+from evaluation import load_split, make_cv
 
 pd.set_option("display.width", 200)
 
-pool = pd.read_csv(C.ARTIFACTS / "train_pool.csv")
-test = pd.read_csv(C.ARTIFACTS / "test.csv")
-drop = [c for c in ["Customer_ID", C.TARGET, "_target_agreement"] if c in pool.columns]
-X_pool, y_pool = pool.drop(columns=drop), pool[C.TARGET]
-X_test, y_test = test.drop(columns=drop), test[C.TARGET]
+X_pool, y_pool, pool = load_split("pool", with_diagnostics=True)
+X_test, y_test = load_split("test")
 
 meta_a = joblib.load(C.ARTIFACTS / "model_filone_a_meta.joblib")
 meta_b = joblib.load(C.ARTIFACTS / "model_filone_b_meta.joblib")
@@ -79,7 +77,7 @@ final.round(4).to_csv(C.REPORTS / "final_test_results.csv")
 # %%
 # --- Errori out-of-fold: dove sbaglia il modello di Filone A? -------------
 # Usa le predizioni OOF della CV sul pool, non un quarto blocco separato.
-cv = StratifiedKFold(n_splits=C.N_FOLDS, shuffle=True, random_state=C.RANDOM_STATE)
+cv = make_cv()
 model_a = MODELS[list(MODELS)[0]]
 oof = cross_val_predict(model_a, X_pool, y_pool, cv=cv, n_jobs=-1)
 oof_proba = cross_val_predict(model_a, X_pool, y_pool, cv=cv, n_jobs=-1,
@@ -96,7 +94,7 @@ print(pd.DataFrame(cm_oof * 100, index=C.CREDIT_SCORE_ORDER,
 agg = pool["_target_agreement"] if "_target_agreement" in pool.columns else None
 if agg is not None:
     ok = oof == y_pool
-    print(f"\nStabilita' del label (accordo con la moda mensile):")
+    print("\nStabilita' del label (accordo con la moda mensile):")
     print(f"  clienti predetti correttamente : {agg[ok].mean():.1%}")
     print(f"  clienti predetti male          : {agg[~ok].mean():.1%}")
     print("  -> se il secondo valore e' nettamente piu' basso, una parte "

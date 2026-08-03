@@ -1,0 +1,3 @@
+config,accuracy,macro_F1
+con pulizia di dominio (progetto),0.7476,0.7414
+senza pulizia di dominio,0.7487,0.7424

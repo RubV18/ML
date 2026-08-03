@@ -31,7 +31,7 @@ PRIMARY_METRIC = "f1_macro"
 AGE_BINS = [13, 25, 40, 60, 200]
 AGE_LABELS = ["<25", "25-40", "40-60", "60+"]
 
-# Estensioni motivate dall'audit (vedi reports/01_data_audit.md).
+# Estensioni motivate dall'audit sui dati (vedi reports/REPORT.md, §2.6).
 # Impostare a False per tornare esattamente al set di feature del piano iniziale.
 USE_DISPERSION_FEATURES = True   # volatilita'/picco delle colonne davvero time-varying
 USE_DOMAIN_RATIOS = True         # debt-to-income, debt-service ratio

@@ -23,15 +23,13 @@ import shap
 from sklearn.linear_model import LogisticRegression
 
 import config as C
+from evaluation import load_split
 from features import feature_names
 
 pd.set_option("display.width", 200)
 
-test = pd.read_csv(C.ARTIFACTS / "test.csv")
-pool = pd.read_csv(C.ARTIFACTS / "train_pool.csv")
-drop = [c for c in ["Customer_ID", C.TARGET, "_target_agreement"] if c in test.columns]
-X_test, y_test = test.drop(columns=drop), test[C.TARGET]
-X_pool = pool.drop(columns=drop)
+X_test, y_test, test = load_split("test", with_diagnostics=True)
+X_pool, _ = load_split("pool")
 
 model = joblib.load(C.ARTIFACTS / "model_filone_a.joblib")
 meta = joblib.load(C.ARTIFACTS / "model_filone_a_meta.joblib")

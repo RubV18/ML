@@ -3,8 +3,8 @@
 Dep. Variable:                      y   No. Observations:                10000
 Model:                        MNLogit   Df Residuals:                     9978
 Method:                           MLE   Df Model:                           20
-Date:                Mon, 27 Jul 2026   Pseudo R-squ.:                  0.3286
-Time:                        19:59:21   Log-Likelihood:                -6871.0
+Date:                Fri, 31 Jul 2026   Pseudo R-squ.:                  0.3286
+Time:                        18:18:37   Log-Likelihood:                -6871.0
 converged:                       True   LL-Null:                       -10234.
 Covariance Type:            nonrobust   LLR p-value:                     0.000
 =============================================================================================

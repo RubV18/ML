@@ -1,0 +1,5 @@
+soglia,valore,ammessi
+1 SE,0.7404,Random Forest
+2 SE,0.7368,"Random Forest, Gradient Boosting (hist)"
+3 SE,0.7332,"Random Forest, Gradient Boosting (hist), Decision Tree"
+4 SE,0.7296,"Random Forest, Gradient Boosting (hist), Decision Tree"

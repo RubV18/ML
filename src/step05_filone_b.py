@@ -25,28 +25,25 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
-from sklearn.model_selection import GridSearchCV, StratifiedKFold
-from sklearn.pipeline import Pipeline
+from sklearn.model_selection import GridSearchCV
 from sklearn.tree import DecisionTreeClassifier, plot_tree
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 
 import config as C
-from features import feature_names, make_preprocessor
+from evaluation import build_pipeline, load_split, make_cv
+from features import CATEGORICAL, feature_names
 from models import logistic_l1
 
 pd.set_option("display.width", 220)
 pd.set_option("display.max_rows", 120)
 
-pool = pd.read_csv(C.ARTIFACTS / "train_pool.csv")
-X = pool.drop(columns=[c for c in ["Customer_ID", C.TARGET, "_target_agreement"]
-                       if c in pool.columns])
-y = pool[C.TARGET]
-cv = StratifiedKFold(n_splits=C.N_FOLDS, shuffle=True, random_state=C.RANDOM_STATE)
+X, y = load_split("pool")
+cv = make_cv()
 
 # %%
 # --- B1. Logistic Regression L1 -------------------------------------------
 print("=== B1: Logistic Regression con penalita' L1 ===")
-pipe_l1 = Pipeline([("prep", make_preprocessor(X, scale=True)), ("clf", logistic_l1())])
+pipe_l1 = build_pipeline(logistic_l1(), X, scale=True)
 C_GRID = [0.002, 0.005, 0.01, 0.03, 0.1, 0.3, 1.0]
 t0 = time.perf_counter()
 gs_l1 = GridSearchCV(pipe_l1, {"clf__C": C_GRID}, scoring=C.PRIMARY_METRIC,
@@ -56,8 +53,7 @@ gs_l1.fit(X, y)
 # Trade-off parsimonia / performance lungo tutto il percorso di regolarizzazione.
 sparsity = []
 for j, c_val in enumerate(C_GRID):
-    p = Pipeline([("prep", make_preprocessor(X, scale=True)),
-                  ("clf", logistic_l1(C=c_val))]).fit(X, y)
+    p = build_pipeline(logistic_l1(C=c_val), X, scale=True).fit(X, y)
     k = int((np.abs(p.named_steps["clf"].coef_).max(axis=0) > 1e-8).sum())
     sparsity.append({"C": c_val, "n_feature": k,
                      "macro_F1_cv": gs_l1.cv_results_["mean_test_score"][j]})
@@ -95,8 +91,7 @@ ax.legend(fontsize=7); ax.spines[["top", "right"]].set_visible(False)
 fig.tight_layout(); fig.savefig(C.FIGURES / "07b_l1_path.png"); plt.close(fig)
 
 # Rifit del modello L1 finale al C selezionato
-best_l1 = Pipeline([("prep", make_preprocessor(X, scale=True)),
-                    ("clf", logistic_l1(C=C_sel))]).fit(X, y)
+best_l1 = build_pipeline(logistic_l1(C=C_sel), X, scale=True).fit(X, y)
 names = np.array(feature_names(best_l1.named_steps["prep"]))
 coefs = best_l1.named_steps["clf"].coef_
 alive = np.abs(coefs).max(axis=0) > 1e-8
@@ -129,9 +124,9 @@ fig.tight_layout(); fig.savefig(C.FIGURES / "07_l1_coefficients.png"); plt.close
 # %%
 # --- B2. Albero decisionale poco profondo ---------------------------------
 print("\n=== B2: albero decisionale a profondita' limitata ===")
-pipe_dt = Pipeline([("prep", make_preprocessor(X, scale=False)),
-                    ("clf", DecisionTreeClassifier(class_weight="balanced",
-                                                   random_state=C.RANDOM_STATE))])
+pipe_dt = build_pipeline(
+    DecisionTreeClassifier(class_weight="balanced", random_state=C.RANDOM_STATE),
+    X, scale=False)
 grid_dt = {"clf__max_depth": [3, 4], "clf__min_samples_leaf": [10, 50, 100, 200],
            "clf__criterion": ["gini", "entropy"]}
 gs_dt = GridSearchCV(pipe_dt, grid_dt, scoring=C.PRIMARY_METRIC, cv=cv, n_jobs=-1)
@@ -185,7 +180,6 @@ Z = pd.DataFrame(prep.transform(X), columns=names)[names[alive]].copy()
 
 # Le dummy one-hot complete sono linearmente dipendenti: per l'inferenza serve
 # una categoria di riferimento per ciascuna variabile categoriale.
-from features import CATEGORICAL
 for cat in CATEGORICAL:
     dummies = [c for c in Z.columns if c.startswith(cat + "_")]
     if len(dummies) > 1:
@@ -239,7 +233,6 @@ y_codes = pd.Categorical(y, categories=C.CREDIT_SCORE_ORDER).codes
 mn = sm.MNLogit(y_codes, sm.add_constant(Z)).fit(method="newton", maxiter=200, disp=0)
 print(f"\nMNLogit — baseline = '{C.CREDIT_SCORE_ORDER[0]}', "
       f"pseudo R^2 = {mn.prsquared:.4f}")
-summ = mn.summary2().tables[1] if hasattr(mn, "summary2") else None
 with open(C.REPORTS / "filone_b_statsmodels.txt", "w") as f:
     f.write(str(mn.summary()))
 print(str(mn.summary())[:4000])
