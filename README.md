@@ -11,7 +11,11 @@ a partire da 8 mesi di storia per cliente.
 Passare da un Random Forest (300 alberi, profondità 12, ~118.000 foglie) a **un
 singolo albero di profondità 4 con 14 foglie** — leggibile su una pagina,
 spiegabile a un cliente senza strumenti aggiuntivi — costa **1,58 punti di
-macro-F1** (0,7617 → 0,7459).
+macro-F1** (0,7617 → 0,7459) con 10.000 clienti di training.
+
+Il costo non è però una costante: su un campione di 35.000 clienti sale a 3,49
+punti, poiché il Random Forest continua a beneficiare dei dati aggiuntivi mentre
+l'albero, con 14 foglie, satura (REPORT §8.3-bis).
 
 ## Documenti
 
@@ -62,6 +66,7 @@ celle `# %%`: si possono lanciare cella-per-cella in VS Code.
 | `step08_fairness` | Il modello tratta le fasce d'età allo stesso modo? |
 | `step09_diagnostics` | Perché l'accuratezza si ferma al 76,9%? |
 | `step10_summary` | Cosa va nel paper? (estrae il sottoinsieme presentabile) |
+| `step11_scaling` | *Appendice.* Più dati aiutano? Il protocollo regge su blocchi mai visti? (opzionale, richiede `Data/new Syntetic data/newtrain.csv`, ~55 min) |
 
 ## Scelte metodologiche
 
@@ -83,7 +88,7 @@ celle `# %%`: si possono lanciare cella-per-cella in VS Code.
 ## Output
 
 - `artifacts/` — dataset a livello cliente, split, modelli serializzati, predizioni OOF
-- `reports/` — tabelle CSV dei risultati, summary statsmodels, i cinque documenti
+- `reports/` — tabelle CSV dei risultati, summary statsmodels, i tre documenti
 - `reports/figures/` — 19 figure: tutto, inclusi i controlli intermedi
 - `reports/figures_paper/` — le 10 figure selezionate per la presentazione, con didascalie in `FIGURE.md`
 

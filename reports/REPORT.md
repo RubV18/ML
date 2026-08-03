@@ -29,9 +29,11 @@ Tre risultati secondari sono metodologicamente più interessanti del primo:
    leakage fra mesi dello stesso cliente e, contemporaneamente, filtra il rumore
    iniettato nei dati: +8,6 punti di accuratezza rispetto all'equivalente
    rigoroso a livello riga.
-2. **Il limite alla performance è il rumore del label, non il modello né il
-   campione.** Il giudizio originale, sullo stesso cliente e con feature quasi
-   identiche fra un mese e l'altro, cambia nel 15,6% dei mesi.
+2. **Il label è rumoroso e pone un tetto**: il giudizio originale, sullo stesso
+   cliente e con feature quasi identiche fra un mese e l'altro, cambia nel 15,6%
+   dei mesi. Il tetto però **non era ancora stato raggiunto**: su un dataset 3×
+   più grande il Random Forest guadagna +1,88 punti, mentre l'albero di
+   profondità 4 resta fermo — la sua capacità satura a 14 foglie (§8.3-bis).
 3. **Il modello amplifica la disparità d'età presente nei dati**, e rimuovere
    l'età dalle feature non serve a niente: la disparità passa dai proxy.
 
@@ -39,25 +41,27 @@ Tre risultati secondari sono metodologicamente più interessanti del primo:
 
 ## Come leggere questo documento
 
-Il documento è scritto per essere autosufficiente. Ogni concetto tecnico è
-introdotto da un riquadro:
+Il documento è autosufficiente. Per rendere accessibile la trattazione anche a
+lettori non specialisti, ogni costrutto tecnico è preceduto da un riquadro di
+sintesi divulgativa:
 
-> **In parole semplici.** Qui si spiega l'idea senza formule, come la si
-> racconterebbe a chi non ha fatto il corso.
+> **In parole semplici.** Formulazione dell'idea priva di formalismo, destinata
+> a chi non abbia familiarità con l'apparato tecnico.
 
-Segue poi la trattazione formale. Chi conosce già l'argomento può saltare i
-riquadri; chi vuole solo capire il senso può leggere solo quelli.
+Alla sintesi segue la trattazione formale. Il lettore esperto può ignorare i
+riquadri senza perdita di contenuto; il lettore non specialista può limitarsi ad
+essi per una comprensione d'insieme.
 
 **Indice**
 
 1. [Il problema e il dominio](#1-il-problema-e-il-dominio)
-2. [I dati: cosa contengono e quanto sono sporchi](#2-i-dati-cosa-contengono-e-quanto-sono-sporchi)
-3. [Metodo: metrica, validazione, modelli](#3-metodo-metrica-validazione-modelli)
-4. [Risultati: baseline, Filone A, Filone B](#4-risultati-baseline-filone-a-filone-b)
+2. [Dati](#2-dati)
+3. [Metodo](#3-metodo)
+4. [Risultati](#4-risultati)
 5. [Valutazione finale sul test set](#5-valutazione-finale-sul-test-set)
-6. [Interpretabilità: SHAP](#6-interpretabilità-shap)
+6. [Interpretabilità](#6-interpretabilità-q5)
 7. [Fairness](#7-fairness)
-8. [Diagnostica: perché ci si ferma al 76,9%](#8-diagnostica-perché-ci-si-ferma-al-769)
+8. [Analisi diagnostica dei limiti di performance](#8-analisi-diagnostica-dei-limiti-di-performance-q7)
 9. [Discussione, model card, limiti](#9-discussione-model-card-limiti)
 10. [Appendici](#10-appendici)
 
@@ -71,7 +75,7 @@ Dato lo storico creditizio di un cliente, assegnargli una fra tre classi di
 merito: `Poor`, `Standard`, `Good`. È un problema di **classificazione
 multi-classe supervisionata** su dati tabellari.
 
-## 1.2 Cosa fa davvero un credit score
+## 1.2 Struttura informativa di un credit score
 
 Un credit score sintetizza il rischio che un soggetto non onori un'obbligazione
 creditizia. Nel mondo reale è prodotto da bureau (FICO, VantageScore, CRIF) a
@@ -93,7 +97,7 @@ che solo con quello statistico, e ci dà un'aspettativa *a priori* su quali
 variabili dovrebbero contare — aspettativa che potremo usare come controllo di
 sanità sui risultati.
 
-## 1.3 Perché qui l'interpretabilità non è un optional
+## 1.3 Vincoli normativi sull'interpretabilità
 
 > **In parole semplici.** In molti problemi di machine learning, se il modello
 > indovina bene non importa come ci arriva. Nel credito no: se a una persona
@@ -126,7 +130,7 @@ Due conseguenze dirette sull'impianto del progetto:
 2. Le spiegazioni locali (§6) sono la forma tecnica di un obbligo giuridico —
    l'*adverse action notice* — non un abbellimento.
 
-## 1.4 Ciò che questo dataset **non** è
+## 1.4 Natura del target: un giudizio, non un evento osservato
 
 Il target `Credit_Score` **non è un default osservato**: è una classificazione
 già prodotta da un processo di scoring a monte. Il modello impara quindi a
@@ -142,7 +146,7 @@ Due implicazioni serie, che tornano in tutto il resto del documento:
   esattamente la ragione per cui il check di fairness (§7) è dovuto, e per cui
   va interpretato come misura di *conservazione del bias*, non di *equità*.
 
-## 1.5 Domande a cui il lavoro risponde
+## 1.5 Domande di ricerca
 
 | # | Domanda | Sezione |
 |---|---|---|
@@ -156,7 +160,7 @@ Due implicazioni serie, che tornano in tutto il resto del documento:
 
 ---
 
-# 2. I dati: cosa contengono e quanto sono sporchi
+# 2. Dati
 
 ## 2.1 Struttura
 
@@ -181,7 +185,7 @@ sbilanciamento max/min = 2,74.*
 sbilanciamento è moderato — non estremo — ma sufficiente a rendere l'accuratezza
 una metrica fuorviante (§3.1).
 
-## 2.2 Il rumore, primo tipo: valori sentinella
+## 2.2 Rumore di tipo I: valori sentinella
 
 > **In parole semplici.** Chi ha costruito questo dataset non ha scritto "dato
 > mancante" nelle caselle vuote: ci ha scritto dentro dei simboli strani, come
@@ -202,8 +206,8 @@ sull'intero CSV:
 | `Changed_Credit_Limit` | `_` | 2.091 | 2,1% |
 | `Monthly_Balance` | `__-3333…33__` | 9 | <0,1% |
 
-⚠️ **`__10000__` è la sentinella più insidiosa.** Ripulita dai caratteri spuri
-diventa `10000.0`, un valore numerico perfettamente plausibile. Se la si
+**Avvertenza.** `__10000__` è la sentinella più insidiosa: ripulita dai caratteri
+spuri diventa `10000.0`, un valore numerico perfettamente plausibile. Se la si
 convertisse prima di rimuoverla, il 99° percentile di `Amount_invested_monthly`
 diventerebbe esattamente 10.000 — un artefatto puro che nessuna ispezione
 successiva rivelerebbe come tale.
@@ -215,7 +219,7 @@ dopo. L'ordine delle operazioni qui è sostanziale, non stilistico.
 Altre colonne numeriche sono sporcate da un `_` finale (`Age` → `28_`,
 `Annual_Income` → `14388.79_`): fra 1.000 e 7.000 righe ciascuna.
 
-## 2.3 Il rumore, secondo tipo: valori implausibili
+## 2.3 Rumore di tipo II: valori implausibili
 
 > **In parole semplici.** Nel dataset ci sono persone di −500 anni e di 8.698
 > anni, redditi da 24 milioni e tassi d'interesse del 5.797%. Non sono
@@ -256,13 +260,13 @@ La pipeline traccia questa percentuale per ogni regola
 (`clean_rows` → `df.attrs["nulled_by_rule"]`), proprio per rendere il controllo
 automatico e non affidato alla memoria.
 
-## 2.4 Tre scoperte che hanno modificato il piano
+## 2.4 Risultati dell'audit che hanno richiesto una revisione del piano
 
 Il piano di lavoro era stato definito prima di vedere i dati. L'audit ha
 rivelato tre fatti che lo hanno reso in parte inapplicabile. Li riportiamo
 perché sono i risultati più utili dell'analisi esplorativa.
 
-### Scoperta 1 — il target **non è costante** entro cliente
+### 2.4.1 Il target non è costante entro cliente
 
 > **In parole semplici.** Ci aspettavamo che un cliente avesse sempre lo stesso
 > giudizio negli 8 mesi. Invece nella maggior parte dei casi cambia. Questo
@@ -285,7 +289,7 @@ sottostimare il rischio. Riguarda il 5,2% dei clienti.
 **Conseguenza sostanziale:** il label ha rumore intrinseco, e questo pone un
 tetto alla performance raggiungibile. Lo verificheremo empiricamente in §5 e §8.
 
-### Scoperta 2 — dopo l'aggregazione **non restano missing**
+### 2.4.2 Dopo l'aggregazione non restano valori mancanti
 
 Per **ogni** colonna e **ogni** cliente esiste almeno un mese con valore valido.
 La mediana per cliente assorbe integralmente la corruzione riga-per-riga:
@@ -304,7 +308,7 @@ ragioni misurate:
 
 L'imputer resta nella pipeline solo per robustezza su dati futuri.
 
-### Scoperta 3 — il dataset contiene clienti minorenni
+### 2.4.3 Il dataset contiene clienti minorenni
 
 688 clienti (5,5%) hanno età fra 14 e 17 anni, **stabile su tutti e 8 i mesi** —
 quindi generata, non rumore. Un primo vincolo `Age ≥ 18` (età legale per
@@ -321,7 +325,7 @@ fascia anziana, storicamente esposta a discriminazione creditizia, manca.
 fascia (destra). La disparità per età è già presente nei dati, prima di
 qualunque modello: i 40–60 sono `Good` al 25,6%, gli under-25 al 13,0%.*
 
-## 2.5 Aggregazione per cliente: la decisione più importante
+## 2.5 Aggregazione a livello di cliente
 
 > **In parole semplici.** Ogni cliente compare 8 volte, una per mese. Se
 > mettessimo alcuni suoi mesi nel gruppo di allenamento e altri nel gruppo di
@@ -377,7 +381,7 @@ segnala un rischio diverso da un Auto Loan.
 
 *Figura 3 — Scarto dalla quota media di `Poor` per tipo di prestito posseduto.*
 
-⚠️ **Risultato negativo, riportato per onestà.** Tutti i tipi di prestito
+**Risultato negativo.** Tutti i tipi di prestito
 mostrano un tasso `Poor` simile (42,7–44,8%, contro una base del 33,3%): il
 *tipo* di debito **non discrimina** in questo dataset. Il Payday Loan è
 addirittura il meno associato a `Poor` fra i tipi, il contrario di quanto il
@@ -423,7 +427,7 @@ Entrambi i gruppi risultano poi marginali (§6): compaiono nelle classifiche
 SHAP ma con contributi di un ordine di grandezza inferiore alle feature
 canoniche, e **nessuno sopravvive alla selezione L1 più aggressiva** (§4.3).
 
-## 2.7 Cosa dicono i dati prima di modellare
+## 2.7 Analisi esplorativa
 
 ![Mutual information](figures/03_mutual_information.png)
 
@@ -491,9 +495,9 @@ vivono nella cross-validation sul train pool.
 
 ---
 
-# 3. Metodo: metrica, validazione, modelli
+# 3. Metodo
 
-## 3.1 La metrica: macro-F1, e perché non l'accuratezza
+## 3.1 Scelta della metrica
 
 > **In parole semplici.** L'accuratezza conta quante risposte sono giuste in
 > totale. Ma se il 49% dei clienti è `Standard`, un modello scemo che risponde
@@ -527,11 +531,11 @@ metrica che **non privilegia nessuna classe per la sua sola numerosità**.
 `Standard` ottiene accuratezza **0,4889** e macro-F1 **0,2189**. L'accuratezza
 lo fa sembrare mediocre; il macro-F1 lo qualifica correttamente come inutile.
 
-> ⚠️ **La metrica è stata fissata prima di allenare qualunque modello.**
+> **La metrica è stata fissata prima di addestrare qualunque modello.**
 > Sceglierla dopo, guardando chi performa meglio, è una delle forme più comuni e
 > meno visibili di autoinganno metodologico.
 
-## 3.2 Sbilanciamento: class weighting, non SMOTE
+## 3.2 Trattamento dello sbilanciamento
 
 > **In parole semplici.** Ci sono meno clienti `Good` che `Standard`. Due modi
 > di rimediare: (a) dire al modello "sbagliare un `Good` ti costa di più", (b)
@@ -616,7 +620,7 @@ basa su distanze euclidee, quindi una feature su scala grande dominerebbe il
 kernel). Per gli alberi è inerte: uno split su `x < 3` e uno su `x' < 0,5` dopo
 standardizzazione partizionano gli stessi campioni.
 
-## 3.5 I modelli: loss, funzione obiettivo, complessità
+## 3.5 Funzioni obiettivo e nozioni di complessità
 
 > **In parole semplici.** Ogni modello ha una "regola per sbagliare il meno
 > possibile" durante l'allenamento. Ma questa regola **non è** il macro-F1 con
@@ -647,7 +651,7 @@ $$\min_{w,b} \underbrace{\frac{1-\rho}{2}\lVert w\rVert_2^2 + \rho\lVert w\rVert
   differenziabile → esiste un minimo globale, raggiungibile con `lbfgs`.
 - $s_i$: peso di classe (§3.2).
 - $\rho$ = `l1_ratio`: 0 → L2 pura, 1 → L1 pura (richiede solver `saga`).
-- ⚠️ **`C` moltiplica la loss, non la penalità.** Se a lezione si scrive
+- **Avvertenza:** `C` moltiplica la loss, non la penalità. Se a lezione si scrive
   $\text{loss} + \lambda R(w)$, allora $C \approx 1/\lambda$: **`C` grande =
   regolarizzazione debole**, il contrario dell'intuizione.
 
@@ -757,12 +761,12 @@ Griglia della logistica L2, stesso modello, stessa CV:
 > effettivamente minimizzata in addestramento. Le differenze qui sono minime, ma
 > il fenomeno è reale: la metrica di selezione è una scelta di modellazione.
 
-## 3.6 Le regole di decisione
+## 3.6 Regole di decisione
 
 Entrambe dichiarate **prima** di vedere i risultati, e implementate una volta
 sola in `evaluation.py` per impedire che divergano.
 
-### La "zona grigia" (Step 0)
+### Criterio della zona grigia (Step 0)
 
 > **In parole semplici.** Prima di spendere ore a ottimizzare modelli
 > complicati, facciamo una prova veloce: se il modello semplice va quasi come
@@ -812,9 +816,9 @@ esiste TreeSHAP (esatto e veloce) mentre per un kernel RBF servirebbe KernelSHAP
 
 ---
 
-# 4. Risultati: baseline, Filone A, Filone B
+# 4. Risultati
 
-## 4.1 Step 0 — serve la non linearità? (Q1)
+## 4.1 Modelli di riferimento: il problema richiede non linearità? (Q1)
 
 Modelli a **setting di default**, stessa CV, stessa metrica. Lo scopo è
 diagnostico, non competitivo: si vuole rispondere a una domanda al costo più
@@ -868,7 +872,7 @@ Nessun modello più semplice la raggiunge.
 > ### Filone A = Random Forest
 > Il problema **non** è lineare-sufficiente.
 
-### Onestà sulla regola: quanto è robusta?
+### Robustezza della regola di selezione
 
 Con 5 fold su 10.000 clienti l'SE è molto piccolo (0,0036) e la regola 1-SE
 **degenera quasi nel "vince il migliore"**. Sensibilità alla soglia:
@@ -884,7 +888,7 @@ regola seleziona un solo modello perché l'SE è piccolo, non perché gli altri
 siano molto peggiori: il Random Forest batte l'albero tunato di **0,85 punti**,
 differenza reale ma modesta.
 
-### Il rischio di selezione, quantificato
+### Quantificazione del rischio di selezione
 
 Valutando 121 configurazioni sugli stessi 5 fold e tenendo la migliore, si sta
 in parte **selezionando rumore**. Se tutti i modelli fossero equivalenti, il
@@ -906,7 +910,13 @@ La risposta rigorosa sarebbe una **nested CV**, che stima l'intera procedura di
 selezione; costerebbe 5× lo step04. Il test set held-out (§5) serve allo stesso
 scopo a costo molto minore.
 
-## 4.3 Filone B — massimizzare l'interpretabilità (Q3)
+> **Verifica successiva (§8.3-ter).** Su un dataset più grande è stato
+> possibile aggiungere un terzo blocco dedicato alla sola selezione. Il
+> gonfiamento teorico stimato qui **non si è materializzato**: selezionare sulla
+> CV e selezionare su un blocco mai visto portano allo stesso modello, e la CV
+> risulta *conservativa* di 1,16 punti anziché ottimista.
+
+## 4.3 Filone B — massimizzazione dell'interpretabilità (Q3)
 
 Vincolo: il modello deve essere **leggibile da un umano senza strumenti
 aggiuntivi**. Due candidati, confrontati direttamente.
@@ -963,7 +973,7 @@ Le 11 superstiti corrispondono **esattamente** alle famiglie informative di uno
 score reale (§1.2). **Nessuna delle feature ingegnerizzate** — dispersione,
 rapporti di dominio, multi-hot dei prestiti — sopravvive alla L1 aggressiva.
 
-### B2 — Albero decisionale a profondità limitata
+### B2 — Albero decisionale a profondità vincolata
 
 Griglia ristretta a `max_depth ∈ {3, 4}` per **vincolo di progetto**: un albero
 più profondo non è più leggibile su una pagina. Dentro il vincolo, la scelta è
@@ -1039,7 +1049,7 @@ significativi a p < 0,05. Segni coerenti col dominio: `Interest_Rate`,
 `Delay_from_due_date`, `Num_Credit_Inquiries`, `Num_Credit_Card` spingono verso
 `Poor`; `Credit_History_Age_Months` verso `Standard`/`Good`.
 
-⚠️ **Un'anomalia da non nascondere.** `Num_of_Delayed_Payment` ha coefficiente
+**Anomalia di segno.** `Num_of_Delayed_Payment` ha coefficiente
 **positivo** verso `Standard` e `Good` (p < 0,001), cioè il segno "sbagliato". È
 un effetto di **soppressione** dovuto alla correlazione con
 `Delay_from_due_date` (che ha segno corretto e magnitudo maggiore):
@@ -1047,7 +1057,7 @@ condizionatamente all'*entità* del ritardo, il *numero* di ritardi correla con
 l'essere un cliente attivo. Il VIF basso (1,99) **non protegge da questo**: il
 VIF misura la varianza gonfiata, non l'interpretabilità causale del segno.
 
-⚠️ **Cautela ulteriore.** Fare inferenza *dopo* una selezione guidata dai dati
+**Cautela ulteriore.** Fare inferenza *dopo* una selezione guidata dai dati
 è a sua volta ottimistico (*post-selection inference*). È un limite dichiarato,
 non risolto qui.
 
@@ -1087,7 +1097,7 @@ spiegare, documentare e difendere un ensemble. **Questo report raccomanda il
 modello del Filone B**, e considera il Filone A come benchmark che quantifica
 quanto si sta lasciando sul tavolo.
 
-## Dove sbaglia il modello
+## 5.1 Struttura degli errori
 
 Matrice di confusione out-of-fold (Filone A, % per riga):
 
@@ -1108,7 +1118,7 @@ migliorabile: è ambiguità del target, non del modello.
 
 ---
 
-# 6. Interpretabilità: SHAP (Q5)
+# 6. Interpretabilità (Q5)
 
 > **In parole semplici.** SHAP risponde alla domanda: "per *questo* cliente,
 > quanto ha pesato ciascuna informazione nella decisione?". L'idea viene dalla
@@ -1123,7 +1133,7 @@ esatto e in tempo polinomiale.
 Le spiegazioni sono calcolate sul test set: sono un artefatto **post-hoc** e non
 entrano in nessuna decisione di modellazione.
 
-## 6.1 Globale
+## 6.1 Attribuzione globale
 
 ![SHAP globale](figures/10_shap_global_bar.png)
 
@@ -1155,14 +1165,14 @@ feature ingegnerizzate (`debt_to_income` 0,0126, `Delay_from_due_date_max`
 *Figura 13 — Dependence plot: come cambia il contributo al variare del valore
 della feature.*
 
-⚠️ **Le due feature più importanti sono in parte output del processo che si sta
-replicando.** `Credit_Mix` è una valutazione di bureau, `Interest_Rate` è il
+**Avvertenza.** Le due feature più importanti sono in parte *output* del processo
+che si sta replicando. `Credit_Mix` è una valutazione di bureau, `Interest_Rate` è il
 prezzo applicato *dopo* aver valutato il merito creditizio. Il loro peso va
 letto come coerenza interna col sistema di scoring esistente, non come scoperta
 causale sul rischio. In produzione andrebbero verificate contro la disponibilità
 effettiva al momento della decisione.
 
-## 6.2 Locale — tre casi
+## 6.2 Attribuzione locale: tre casi rappresentativi
 
 Scelti per rappresentare i casi d'uso reali di un ufficio crediti.
 
@@ -1267,7 +1277,7 @@ Il gap di macro-F1 fra gruppi è invece piccolo (**0,017**: 0,740 / 0,747 /
 sistematicamente diverse. È un caso da manuale del perché **l'accuratezza
 aggregata non basta come controllo di equità**.
 
-## 7.3 Il test di "fairness through unawareness"
+## 7.3 Verifica di *fairness through unawareness*
 
 > **In parole semplici.** La soluzione istintiva è: togliamo l'età dalle
 > variabili, così il modello non può discriminare. Funziona? No.
@@ -1295,7 +1305,7 @@ trade-off legali, che questo progetto non affronta.
 
 ---
 
-# 8. Diagnostica: perché ci si ferma al 76,9% (Q7)
+# 8. Analisi diagnostica dei limiti di performance (Q7)
 
 Un'accuratezza del 76,9% può sembrare bassa rispetto ai riferimenti citati per
 il credit scoring. Quattro ipotesi, testate con esperimenti controllati.
@@ -1303,11 +1313,11 @@ il credit scoring. Quattro ipotesi, testate con esperimenti controllati.
 | Ipotesi | Verdetto | Evidenza |
 |---|---|---|
 | È poco rispetto ai riferimenti | **Confronto mal posto** | La baseline banale è 48,9% |
-| Il campione è troppo piccolo | **NO** | Curva piatta: +0,0033 negli ultimi 2.267 clienti |
+| Il campione è troppo piccolo | **SÌ, in parte** | Curva piatta fino a 8.000, ma con 28.000 clienti +1,98 punti (§8.3-bis) |
 | La pulizia butta via segnale | **NO** | Ablation: +0,11 punti, entro il rumore |
 | **Il label ha rumore intrinseco** | **SÌ** | Auto-coerente solo all'84,4% |
 
-## 8.1 Leakage: quanto vale, e in che direzione
+## 8.1 Entità e direzione del data leakage
 
 Confronto controllato: stesso dataset a livello riga, stesso Random Forest,
 stessi iperparametri. **Cambia solo il modo di splittare.**
@@ -1329,7 +1339,7 @@ sopra** la versione con leakage. L'aggregazione per cliente **non è un
 sacrificio metodologico pagato in performance**: la mediana su 8 mesi filtra il
 rumore iniettato e migliora il risultato, oltre a eliminare il leakage.
 
-## 8.2 La metrica: quanto costa il class weighting
+## 8.2 Effetto del class weighting
 
 Misurato sulle predizioni **out-of-fold** (n = 10.000), non sul test set: è un
 confronto fra configurazioni, cioè il tipo di scelta che il test set non deve
@@ -1347,7 +1357,7 @@ costi. Il recall su `Poor` sale da 0,712 a 0,789 e su `Good` da 0,798 a 0,897, a
 spese di `Standard` — nel credito la direzione giusta, perché le classi estreme
 sono quelle su cui si decide.
 
-## 8.3 Numerosità: la curva di apprendimento
+## 8.3 Numerosità del campione: curva di apprendimento
 
 ![Curva di apprendimento](figures/15_learning_curve.png)
 
@@ -1361,14 +1371,189 @@ sono quelle su cui si decide.
 | 6.866 | 0,8367 | 0,7416 | +0,0009 |
 | 8.000 | 0,8321 | **0,7440** | +0,0024 |
 
-> **La curva è piatta.** Raddoppiare i clienti da 4.600 a 8.000 vale +0,007
-> macro-F1. Servirebbero ordini di grandezza in più per un punto di guadagno.
-> **Non è un problema di numerosità.**
+Sul dataset originale la curva **appare piatta**: raddoppiare i clienti da 4.600
+a 8.000 vale +0,007 macro-F1.
+
+> ### Nota metodologica: revisione di una conclusione precedente
+> Una versione precedente di questo documento traeva da questa tabella la
+> conclusione che la numerosità non costituisse un vincolo. Si trattava di
+> un'**estrapolazione oltre il range osservato**: la verifica diretta su un
+> campione tre volte più ampio (§8.3-bis) la falsifica, mostrando un guadagno di
+> circa due punti.
+>
+> La tabella qui sopra non è sbagliata — la curva *è* piatta fra 4.600 e 8.000.
+> È il passaggio inferenziale da "piatta nell'intervallo osservato" a "piatta in
+> generale" a non essere giustificato: il regime asintotico non era ancora stato
+> raggiunto.
 
 Il gap train − CV è 0,088: overfitting presente ma modesto, in calo costante con
 la dimensione. Non è il vincolo attivo.
 
-## 8.4 La pulizia sta scartando segnale?
+## 8.3-bis Verifica su campione allargato (37.500 clienti)
+
+Un dataset sintetico allargato (`Data/new Syntetic data/newtrain.csv`, 37.500
+clienti — sovrainsieme che contiene i 12.500 originali) permette di **testare**
+l'estrapolazione invece di fidarsene. Codice: `src/step11_scaling.py` (parte A).
+
+**Avvertenza sul leakage.** Il campione allargato contiene anche i 2.500 clienti del
+nostro test set. Il pool allargato li esclude esplicitamente (35.000 clienti),
+altrimenti il confronto sarebbe vinto dal leakage, non dai dati.
+
+**Curva estesa a 28.000 clienti:**
+
+| Clienti in training | macro-F1 train | macro-F1 CV | guadagno |
+|---:|---:|---:|---:|
+| 1.200 | 0,9587 | 0,7507 | — |
+| 5.000 | 0,8593 | 0,7593 | +0,0075 |
+| 8.000 | 0,8312 | 0,7587 | −0,0006 |
+| 12.000 | 0,8305 | 0,7680 | +0,0094 |
+| 18.000 | 0,8241 | 0,7765 | +0,0084 |
+| 28.000 | 0,8149 | **0,7785** | +0,0020 |
+
+![Curva estesa](figures/16_learning_curve_estesa.png)
+
+*Figura 19 — Curva di apprendimento estesa. La zona piatta fra 5.000 e 8.000 —
+quella che aveva motivato la conclusione errata — è seguita da una ripresa netta.*
+
+**Da 8.000 a 28.000 clienti: +1,98 punti di macro-F1.** Il gap train − CV scende
+da 0,208 (a 1.200) a **0,036** (a 28.000): con più dati l'overfitting quasi
+sparisce, comportamento atteso che conferma come il modello avesse ancora
+capacità inutilizzata.
+
+**Verifica end-to-end**, stessi iperparametri, valutazione sullo **stesso** test
+set originale (2.500 clienti, escluso da entrambi i pool):
+
+| Modello | Training | macro-F1 test | accuracy test |
+|---|---|---:|---:|
+| Random Forest | pool 10.000 | 0,7617 | 0,7688 |
+| Random Forest | **pool 35.000** | **0,7805** | **0,7876** |
+| Decision Tree (d=4) | pool 10.000 | 0,7459 | 0,7508 |
+| Decision Tree (d=4) | pool 35.000 | 0,7456 | 0,7500 |
+
+> **Più dati aiutano il modello ad alta capacità (+1,88 punti) e non fanno nulla
+> per quello a bassa capacità (−0,03).**
+
+Il risultato è coerente con la teoria: un albero di profondità 4 ha **14 foglie**
+— la sua capacità satura immediatamente, e nessuna quantità di dati può fargli
+rappresentare una funzione più ricca. Il Random Forest, con ~118.000 foglie,
+aveva ancora spazio.
+
+**Conseguenza sul trade-off centrale del progetto:** con 3,5× i dati il costo
+della trasparenza **sale da 1,58 a 3,49 punti** (0,7805 vs 0,7456). La
+convenienza dell'albero singolo non è una proprietà assoluta: dipende dalla
+quantità di dati disponibili, e si riduce al crescere di questa.
+
+> **Nota sul confronto.** Il pool allargato ha una distribuzione di classi
+> leggermente diversa (Poor 30,0% vs 33,3%). Le due evidenze sono però
+> indipendenti e concordi: la curva interna a `newtrain` (+1,98 punti da 8.000 a
+> 28.000) isola l'effetto della quantità a distribuzione fissa, e il confronto
+> end-to-end (+1,88) lo conferma su un held-out immutato.
+
+## 8.3-ter Protocollo a tre blocchi 60/20/20
+
+Con 12.500 clienti frammentare in tre blocchi fissi sarebbe stato uno spreco —
+la CV usa i dati meglio di un blocco di validazione fisso, ed è la ragione per
+cui il piano originale l'aveva escluso. Con 37.500 diventa permissibile, e serve
+a rispondere a tre domande che il protocollo a due blocchi lasciava aperte.
+Codice: `src/step11_scaling.py` (parte B).
+
+| Blocco | n | Compito |
+|---|---:|---|
+| train | 22.500 | tuning delle 121 configurazioni, via CV interna |
+| validation | 7.500 | **selezione** fra i modelli tunati — mai vista nel tuning |
+| test | 7.500 | **stima finale** — mai visto, toccato una volta |
+
+Distribuzione delle classi identica nei tre blocchi (30,25 / 53,23 / 16,52%).
+Tutto rifittato da zero: nessun modello addestrato altrove entra, altrimenti i
+blocchi non sarebbero davvero mai-visti.
+
+### Le tre stime a confronto
+
+| Modello | CV (train) | SE | validation | test | scarto val−CV |
+|---|---:|---:|---:|---:|---:|
+| **Random Forest** | **0,8388** | 0,0024 | **0,8461** | **0,8503** | +0,0073 |
+| Gradient Boosting | 0,8229 | 0,0013 | 0,8392 | 0,8425 | +0,0163 |
+| SVC (kernel RBF) | 0,8186 | 0,0022 | 0,8312 | 0,8335 | +0,0126 |
+| Decision Tree | 0,7653 | 0,0029 | 0,7639 | 0,7667 | −0,0014 |
+| Logistic Regression (L2) | 0,7260 | 0,0031 | 0,7265 | 0,7268 | +0,0005 |
+| Linear SVC | 0,7196 | 0,0029 | 0,7168 | 0,7183 | −0,0028 |
+
+Scarto medio |validation − CV| = **0,0068**; massimo 0,0163.
+
+Lo scarto è **sistematicamente positivo per i modelli ad alta capacità**
+(RF +0,007, GB +0,016, SVC +0,013) e nullo per quelli a bassa capacità
+(albero −0,001, lineari ±0,003). La spiegazione è la stessa di §8.3-bis: in CV
+il modello vede 4/5 dei dati (18.000), nel rifit finale li vede tutti (22.500).
+Il 25% in più giova a chi ha capacità per usarlo, e non fa nulla agli altri.
+
+### Tenuta su blocchi non osservati
+
+| | macro-F1 | accuracy |
+|---|---:|---:|
+| CV interna (train) | 0,8388 | — |
+| **validation (mai vista)** | **0,8461** | 0,8548 |
+| **test (mai visto)** | **0,8503** | 0,8596 |
+| test con **label permutato** (rumore puro) | 0,3282 | 0,3752 |
+
+> Le tre stime differiscono di al più **0,0116** e distano **0,51 punti** dal
+> rumore puro. Il modello selezionato non subisce alcuna degradazione su blocchi
+> mai osservati: la stima interna era già affidabile, e il protocollo a due
+> blocchi adottato nel corpo del lavoro non risulta ottimistico.
+
+### Distorsione da selezione
+
+| Criterio di selezione | Modello scelto |
+|---|---|
+| Regola 1-SE sulla CV | Random Forest |
+| Migliore sul blocco di validazione | Random Forest |
+
+> I due criteri concordano. Il gonfiamento da selezione stimato in via teorica
+> in §4.2 (≈1,1 punti con 121 configurazioni) non si osserva: il modello vincente
+> distanzia il secondo di 1,6 punti, margine troppo ampio perché la variabilità
+> campionaria possa ribaltarlo.
+
+### Ottimismo della stima interna
+
+**Ottimismo CV vs test sul vincitore: −1,16 punti** — cioè la CV era
+**conservativa**, non ottimista. Coerente col protocollo a due blocchi (−1,77
+punti, §5), e per la stessa ragione: il rifit finale usa più dati di quanti ne
+veda ogni fold.
+
+### Dipendenza degli iperparametri dalla scala del campione
+
+Il confronto fra le configurazioni ottimali alle due scale evidenzia uno
+spostamento sistematico:
+
+| | tunato su 10.000 | tunato su 22.500 |
+|---|---|---|
+| Random Forest | `max_depth=12, n_estimators=300` | **`max_depth=None, n_estimators=600`** |
+| Decision Tree | `max_depth=6, min_samples_leaf=100` | **`max_depth=12, min_samples_leaf=1`** |
+
+Con più dati gli alberi profondi smettono di overfittare e cominciano a rendere:
+è il comportamento che la teoria prevede, osservato direttamente.
+
+**Conseguenza quantitativa**, a parità di dimensione del training (18.000
+clienti) e sullo stesso dataset:
+
+| | macro-F1 CV |
+|---|---:|
+| Iperparametri riusati da 10.000 clienti (§8.3-bis) | 0,7765 |
+| **Iperparametri ri-tunati su 22.500** | **0,8388** |
+
+> **Il solo ri-tuning vale +6,2 punti.** In §8.3-bis gli iperparametri originali
+> erano stati mantenuti fissi per isolare l'effetto della sola *quantità* di
+> dati, ottenendo +1,88 punti. Come esperimento controllato la scelta è corretta,
+> ma sottostima il guadagno complessivo: gli iperparametri ottimali per 10.000
+> clienti non lo sono per 35.000. Un aumento della numerosità va accompagnato da
+> una nuova ricerca degli iperparametri, pena la rinuncia a gran parte del
+> beneficio.
+
+Il divario lineare / non lineare esplode di conseguenza: da 3,2 punti (§4.1) a
+**11,3** (0,8388 contro 0,7260). Su questa scala il problema esce dalla zona
+grigia e la non linearità diventa decisamente necessaria — la conclusione di
+§4.1 era corretta *per la scala a cui è stata presa*, e va citata con quella.
+
+## 8.4 Effetto della pulizia di dominio
 
 Ipotesi: se la corruzione fosse stata iniettata in modo correlato al target,
 nullificarla costerebbe performance.
@@ -1383,7 +1568,7 @@ indipendente dal target, coerentemente con la missingness MCAR di §2.4. La
 pulizia si giustifica sulla **correttezza** — non stiamo modellando su età
 negative — non sulla performance.
 
-## 8.5 Il vincolo vero: il rumore del label
+## 8.5 Il vincolo dominante: rumore del label
 
 - Solo il **41,7%** dei clienti ha lo stesso giudizio su tutti e 8 i mesi.
 - Accordo medio con la moda: **84,4%**.
@@ -1399,7 +1584,7 @@ Tre conferme indipendenti convergono:
 2. i casi SHAP A e B, spiegazioni identiche e label diversi — §6.2;
 3. la curva di apprendimento piatta — §8.3.
 
-## 8.6 Sul confronto con "gli standard del 90%"
+## 8.6 Confronto con i riferimenti di settore
 
 Il termine di paragone non è omogeneo:
 
@@ -1413,13 +1598,17 @@ Il termine di paragone non è omogeneo:
 3. **Il target non è un default osservato** ma un giudizio pre-esistente e
    internamente incoerente al 15,6%.
 
-## 8.7 Cosa alzerebbe davvero il risultato
+## 8.7 Direzioni di miglioramento
 
-1. **Un label meno rumoroso** — vincolo dominante, non aggredibile con questi dati.
-2. **Feature non presenti** (importo richiesto, garanzie, esposizioni su altri
-   istituti). Il potere informativo, non la numerosità, è il limite.
-3. **Non** più dati (§8.3), **non** meno pulizia (§8.4), **non** un modello più
-   complesso: il gradient boosting tunato resta sotto il Random Forest.
+1. **Più dati** — verificato: +1,88 punti passando da 10.000 a 35.000 clienti,
+   ma **solo per il modello ad alta capacità** (§8.3-bis). Per l'albero di
+   profondità 4 il guadagno è nullo: satura a 14 foglie.
+2. **Un label meno rumoroso** — resta un vincolo strutturale (§8.5), ma il tetto
+   che impone è più alto di quanto stimato inizialmente.
+3. **Feature non presenti** (importo richiesto, garanzie, esposizioni su altri
+   istituti).
+4. **Non** meno pulizia (§8.4), **non** un modello più complesso: il gradient
+   boosting tunato resta sotto il Random Forest.
 
 ---
 
@@ -1461,6 +1650,9 @@ Il target è un giudizio pre-esistente, non un default osservato.
   probabilità di rischio ben calibrata.
 - **Nessuna validazione temporale**: il panel di 8 mesi è stato collassato,
   quindi non c'è garanzia di tenuta su dati futuri (drift non testabile).
+- **Il trade-off centrale dipende dalla scala dei dati**: 1,58 punti a 10.000
+  clienti, 3,49 a 35.000 (§8.3-bis). Va citato con la numerosità a cui si
+  riferisce, non come costante.
 - **Bias di selezione residuo** (§4.2): 121 configurazioni valutate sugli stessi
   fold. Mitigato ma non eliminato dal test set held-out.
 
@@ -1478,7 +1670,7 @@ Il target è un giudizio pre-esistente, non un default osservato.
 - **Nessuna mitigazione implementata**; l'unica testata (rimozione
   dell'attributo) è risultata inefficace.
 
-## 9.6 Il trade-off, dichiarato
+## 9.6 Sintesi del trade-off
 
 | | Filone A | Filone B |
 |---|---|---|
@@ -1506,8 +1698,10 @@ Il lavoro risponde alle sette domande di §1.5:
   delle feature principali sono però output del processo replicato.
 - **Q6** Il modello **amplifica** la disparità d'età, con FPR su `Poor` 2,7
   volte più alto per gli under-25; rimuovere l'età non serve.
-- **Q7** Il limite è il **rumore del label**, non il campione né la pulizia né la
-  capacità del modello.
+- **Q7** Concorrono due limiti: il **rumore del label** (strutturale) e la
+  **numerosità** (aggredibile). Con 3,5× i dati il Random Forest sale a 0,7805,
+  l'albero di profondità 4 resta a 0,7456: il costo della trasparenza sale da
+  1,58 a 3,49 punti. Non è la pulizia (§8.4) né la capacità del modello.
 
 Il contributo metodologico che riteniamo più trasferibile è **§8.1**:
 l'aggregazione per cliente, adottata per ragioni di rigore (impedire il
@@ -1546,6 +1740,7 @@ invece di assumerlo in un senso o nell'altro.
 | `step08_fairness` | Tratta le fasce d'età allo stesso modo | §7 |
 | `step09_diagnostics` | Perché ci si ferma al 76,9% | §8 |
 | `step10_summary` | Cosa va nel paper | — |
+| `step11_scaling` | *(appendice)* Più dati aiutano? Il protocollo regge su blocchi mai visti? | §8.3-bis/ter |
 
 ## B. Griglie di iperparametri
 
@@ -1603,6 +1798,7 @@ risultati riportati.
 | 14–16 | `13_shap_local_{A,B,C}*.png` | §6.2 |
 | 17 | `14_fairness_parity.png` | §7.1 |
 | 18 | `15_learning_curve.png` | §8.3 |
+| 19 | `16_learning_curve_estesa.png` | §8.3-bis |
 
 ## F. Tabelle di risultato (CSV)
 
@@ -1611,4 +1807,5 @@ Tutti i numeri di questo documento sono rigenerabili:
 `filone_b_l1_sparsity.csv`, `filone_b_l1_coefficients.csv`, `filone_b_vif.csv`,
 `filone_b_statsmodels.txt`, `final_test_results.csv`,
 `shap_global_importance.csv`, `fairness_oof.csv`, `fairness_test.csv`,
-`fairness_unawareness.csv`, `diagnostica_t1..t4*.csv`.
+`fairness_unawareness.csv`, `diagnostica_t1..t4*.csv`; per l'appendice §8.3-bis/ter `scaling_*.csv` e
+`holdout_*.csv`.

@@ -1,0 +1,7 @@
+modello,CV (train),SE,validation,test,scarto val-CV
+Random Forest,0.8388,0.0024,0.8461,0.8503,0.0073
+Gradient Boosting (hist),0.8229,0.0013,0.8392,0.8425,0.0163
+SVC (kernel RBF),0.8186,0.0022,0.8312,0.8335,0.0126
+Decision Tree,0.7653,0.0029,0.7639,0.7667,-0.0014
+Logistic Regression (L2),0.726,0.0031,0.7265,0.7268,0.0005
+Linear SVC,0.7196,0.0029,0.7168,0.7183,-0.0028

@@ -29,6 +29,8 @@ STEPS = [
     ("08", "step08_fairness.py", "fairness su eta' + unawareness test"),
     ("09", "step09_diagnostics.py", "diagnostica: leakage, learning curve, ablation"),
     ("10", "step10_summary.py", "sintesi per paper/slide: RISULTATI.md + figure selezionate"),
+    ("11", "step11_scaling.py",
+     "appendice: campione allargato, curva estesa + protocollo 60/20/20 (opz., ~55 min)"),
 ]
 
 

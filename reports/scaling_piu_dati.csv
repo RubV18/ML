@@ -1,0 +1,5 @@
+modello,training,n_train,macro_F1_test,accuracy_test
+Random Forest (Filone A),pool 10.000,10000,0.7617,0.7688
+Random Forest (Filone A),pool 35.000,35000,0.7805,0.7876
+Decision Tree (Filone B),pool 10.000,10000,0.7459,0.7508
+Decision Tree (Filone B),pool 35.000,35000,0.7456,0.75

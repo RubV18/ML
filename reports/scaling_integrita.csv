@@ -1,0 +1,4 @@
+,"macro_F1 (CV, n=2.500)"
+"dataset originale, etichette vere",0.7052
+campione allargato,0.6925
+"dataset originale, etichette permutate (rumore puro)",0.2994

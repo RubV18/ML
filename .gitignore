@@ -4,12 +4,8 @@ __pycache__/
 *.py[cod]
 .ipynb_checkpoints/
 
-# Virtualenv creato per errore da un comando con placeholder letterale.
-# Non serve a nulla: si puo' cancellare (`rm -rf path`).
-path/
-
-# Dati: il CSV Kaggle non va versionato (30 MB). Vedi README per scaricarlo.
-Data/*.csv
+# Dati di input: non versionati (126 MB). Vedi README per procurarseli.
+Data/
 
 # Artefatti rigenerabili da `python src/run_all.py` (28 MB, di cui il grosso
 # sono i modelli serializzati).
